@@ -6,9 +6,46 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 // This is the maximum number of arguments your shell should handle for one command
 #define MAX_ARGS 128
+
+// separate("ls -l -w -something");
+// -> curr = "ls ...
+// -> input = "ls ...
+// -> i = 0
+// After first strsep:
+// -> curr = "ls\0"
+// -> input = "-l ..."
+// -> i = 1
+
+char** separate(char* input) {
+  char** list = malloc(sizeof(char*) * MAX_ARGS);
+
+  // Use strsep to break arguments
+  char* curr = input;
+  int i = 0;
+  strsep(&input, " \n");
+  list[i++] = curr;
+  while (curr != input) {
+    // Update current to be farmost pointer
+    curr = input;
+
+    // If string is empty skip it
+    if (strlen(curr) == 0) continue;
+
+    // Add current to list
+    list[i++] = curr;
+
+    // Move input to next argument
+    strsep(&input, " \n");
+  }
+
+  list[i] = NULL;
+
+  return list;
+}
 
 int main(int argc, char** argv) {
   // If there was a command line option passed in, use that file instead of stdin
@@ -42,7 +79,7 @@ int main(int argc, char** argv) {
         exit(2);
       } else {
         // Must have been end of file (ctrl+D)
-        printf("\nShutting down...\n");
+        printf("\nShutting do<sys/wait.h>wn...\n");
 
         // Exit the infinite loop
         break;
@@ -50,6 +87,27 @@ int main(int argc, char** argv) {
     }
 
     // TODO: Execute the command instead of printing it below
+    pid_t (child_id) = fork();
+    char ** words = separate(line);
+
+    if (child_id == -1){
+      fprintf(stderr, "Fork failed\n");
+      continue;
+    }
+    else if (child_id == 0){
+      printf("This is the child\n");
+      execvp (words[0], words);
+    }
+    else {
+      int status;
+      if (wait(&status) == -1) {
+        fprintf(stderr, "Waiting on child failed\n");
+        continue;
+      }
+      // Maybe fix this later?
+      printf("[%s exited with status %d]\n", words[0], WEXITSTATUS(status));
+    }
+
     printf("Received command: %s\n", line);
   }
 
