@@ -20,28 +20,36 @@
 // -> input = "-l ..."
 // -> i = 1
 
+struct command {
+  char delimiter;
+  char* comm;
+};
+
+
+void print_list(char** list) {
+  int i = 0;
+  while (list[i] != NULL) {
+    printf("%s\n", list[i]);
+    i++;
+  }
+}
+
 char** separate(char* input) {
   char** list = malloc(sizeof(char*) * MAX_ARGS);
 
   // Use strsep to break arguments
-  char* curr = input;
   int i = 0;
-  strsep(&input, " \n");
-  list[i++] = curr;
-  while (curr != input) {
-    // Update current to be farmost pointer
-    curr = input;
 
-    // If string is empty skip it
-    if (strlen(curr) == 0) continue;
+  // Declare word var
+  char *found;
 
-    // Add current to list
-    list[i++] = curr;
-
-    // Move input to next argument
-    strsep(&input, " \n");
+  // Grab each argument and put it in list
+  while ( (found = strsep(&input, " \n\0")) != NULL) {
+    // Only add if nonempty
+    if (strlen(found) != 0) list[i++] = found;
   }
 
+  // Add null to end
   list[i] = NULL;
 
   return list;
@@ -86,29 +94,86 @@ int main(int argc, char** argv) {
       }
     }
 
-    // TODO: Execute the command instead of printing it below
-    pid_t (child_id) = fork();
-    char ** words = separate(line);
+    char* delim_position;
+    struct command* commands[MAX_ARGS];
+    int i = 0;
 
-    if (child_id == -1){
-      fprintf(stderr, "Fork failed\n");
-      continue;
+    while (true) {
+
+      delim_position = strpbrk(line, ";&");
+
+      if (delim_position == NULL) {
+        commands[i++] = malloc(sizeof(struct command));
+        commands[i-1]->delimiter = '\0';
+        commands[i-1]->comm = line;
+
+        if (strcmp(line, "\n") == 0) commands[--i] = NULL;
+        break;
+      }
+
+      char delim = *delim_position;
+      *delim_position = '\0';
+
+      commands[i++] = malloc(sizeof(struct command));
+      commands[i-1]->delimiter = delim;
+      commands[i-1]->comm = line;
+      line = delim_position + sizeof(char);
     }
-    else if (child_id == 0){
-      printf("This is the child\n");
-      execvp (words[0], words);
-    }
-    else {
-      int status;
-      if (wait(&status) == -1) {
-        fprintf(stderr, "Waiting on child failed\n");
+
+    commands[i] = NULL;
+
+    // print_list(commands);
+
+    for (int j = 0; j < i; j++) {
+      if (commands[j]->comm == NULL) continue;
+
+      char ** words = separate(commands[j]->comm);
+
+      // if the inputted command is cd then call chdir function
+      if (strcmp (words[0], "cd") == 0) {
+        if (words[1] !=NULL) {
+          chdir(words[1]);
+        }
         continue;
       }
-      // Maybe fix this later?
-      printf("[%s exited with status %d]\n", words[0], WEXITSTATUS(status));
-    }
 
-    printf("Received command: %s\n", line);
+      //exit the program if exit command is typed
+      else if (strcmp (words[0], "exit") == 0) {
+        break;
+      }
+
+      // TODO: Execute the command instead of printing it below
+      pid_t (child_id) = fork();
+
+
+      if (child_id == -1){
+        fprintf(stderr, "Fork failed\n");
+        continue;
+      }
+      else if (child_id == 0){
+        execvp (words[0], words);
+        printf("execvp failed\n");
+      }
+      else {
+        int status = -1;
+        if (commands[j]->delimiter != '&' && wait(&status) == -1) {
+          fprintf(stderr, "Waiting on child failed\n");
+          continue;
+        }
+
+        // Maybe fix this later?
+        if (status != -1){
+          printf("[%s exited with status %d]\n", words[0], WEXITSTATUS(status));
+        }
+
+
+      }
+    }
+    int ret;
+    int status;
+    while ((ret = waitpid(-1, &status, WNOHANG)) > 0) {
+      printf("[background process %d exited with status %d]\n", ret, WEXITSTATUS(status));
+    }
   }
 
   // If we read in at least one line, free this space
